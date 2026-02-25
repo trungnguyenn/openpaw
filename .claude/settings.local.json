@@ -15,7 +15,10 @@
       "WebSearch",
       "WebFetch(domain:www.npmjs.com)",
       "Bash(ls:*)",
-      "Bash(container exec:*)"
+      "Bash(container exec:*)",
+      "Bash(test -d .nanoclaw && echo \"INITIALIZED\" || echo \"NOT_INITIALIZED\")",
+      "Bash(./.claude/skills/update/scripts/fetch-upstream.sh)",
+      "Bash(npm test)"
     ]
   }
 }
