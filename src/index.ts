@@ -6,9 +6,17 @@ import {
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
+  TELEGRAM_BOT_POOL,
+  TELEGRAM_BOT_TOKEN,
+  TELEGRAM_ONLY,
   TRIGGER_PATTERN,
 } from './config.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
+import {
+  initBotPool,
+  registerMainTelegramSender,
+  TelegramChannel,
+} from './channels/telegram.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -47,8 +55,9 @@ let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 let messageLoopRunning = false;
+let singletonLockFd: number | null = null;
 
-let whatsapp: WhatsAppChannel;
+let whatsapp: WhatsAppChannel | undefined;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
@@ -420,7 +429,83 @@ function ensureContainerSystemRunning(): void {
   cleanupOrphans();
 }
 
+function acquireSingletonLock(): void {
+  const lockPath = path.join(process.cwd(), 'store', 'nanoclaw.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(lockPath, 'wx');
+      fs.writeFileSync(fd, `${process.pid}\n`);
+      singletonLockFd = fd;
+      logger.info({ lockPath, pid: process.pid }, 'Acquired singleton lock');
+      return;
+    } catch (err: any) {
+      if (err?.code !== 'EEXIST') {
+        throw err;
+      }
+
+      let existingPid: number | null = null;
+      try {
+        const raw = fs.readFileSync(lockPath, 'utf-8').trim();
+        const parsed = Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed) && parsed > 0) existingPid = parsed;
+      } catch {
+        // lock file unreadable — handle as stale lock below
+      }
+
+      if (existingPid && existingPid !== process.pid) {
+        try {
+          process.kill(existingPid, 0);
+          logger.fatal(
+            { existingPid },
+            'Another NanoClaw instance is already running. Exiting to prevent duplicate replies.',
+          );
+          process.exit(1);
+        } catch {
+          logger.warn({ existingPid }, 'Found stale lock from dead process');
+        }
+      } else if (existingPid === process.pid) {
+        logger.warn({ existingPid }, 'Lock file already points to current PID');
+      } else {
+        logger.warn('Lock file exists but has no valid PID');
+      }
+
+      try {
+        fs.unlinkSync(lockPath);
+      } catch (unlinkErr) {
+        logger.fatal(
+          { lockPath, err: unlinkErr },
+          'Failed to clear stale singleton lock',
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  logger.fatal('Failed to acquire singleton lock after stale lock cleanup');
+  process.exit(1);
+}
+
+function releaseSingletonLock(): void {
+  const lockPath = path.join(process.cwd(), 'store', 'nanoclaw.lock');
+  if (singletonLockFd !== null) {
+    try {
+      fs.closeSync(singletonLockFd);
+    } catch {
+      // ignore close errors on shutdown
+    }
+    singletonLockFd = null;
+  }
+  try {
+    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+  } catch {
+    // ignore lock cleanup errors on shutdown
+  }
+}
+
 async function main(): Promise<void> {
+  acquireSingletonLock();
   ensureContainerSystemRunning();
   initDatabase();
   logger.info('Database initialized');
@@ -431,6 +516,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'Shutdown signal received');
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
+    releaseSingletonLock();
     process.exit(0);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -441,13 +527,29 @@ async function main(): Promise<void> {
     onMessage: (_chatJid: string, msg: NewMessage) => storeMessage(msg),
     onChatMetadata: (chatJid: string, timestamp: string, name?: string, channel?: string, isGroup?: boolean) =>
       storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
+    onOutgoingMessage: (_chatJid: string, msg: NewMessage) =>
+      storeMessage({ ...msg, is_bot_message: true }),
     registeredGroups: () => registeredGroups,
   };
 
   // Create and connect channels
-  whatsapp = new WhatsAppChannel(channelOpts);
-  channels.push(whatsapp);
-  await whatsapp.connect();
+  if (!TELEGRAM_ONLY) {
+    whatsapp = new WhatsAppChannel(channelOpts);
+    channels.push(whatsapp);
+    await whatsapp.connect();
+  }
+
+  if (TELEGRAM_BOT_TOKEN) {
+    const telegram = new TelegramChannel(TELEGRAM_BOT_TOKEN, channelOpts);
+    registerMainTelegramSender((jid: string, text: string) =>
+      telegram.sendMessage(jid, text),
+    );
+    channels.push(telegram);
+    await telegram.connect();
+    if (TELEGRAM_BOT_POOL.length > 0) {
+      await initBotPool(TELEGRAM_BOT_POOL);
+    }
+  }
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
@@ -493,6 +595,7 @@ const isDirectRun =
 if (isDirectRun) {
   main().catch((err) => {
     logger.error({ err }, 'Failed to start NanoClaw');
+    releaseSingletonLock();
     process.exit(1);
   });
 }

@@ -118,6 +118,33 @@ function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
 }
 
+function extractAssistantText(message: unknown): string | null {
+  if (!message || typeof message !== 'object') return null;
+  const payload = message as {
+    content?: unknown;
+    message?: { content?: unknown };
+  };
+  const content = payload.message?.content ?? payload.content;
+
+  if (typeof content === 'string') {
+    const text = content.trim();
+    return text || null;
+  }
+
+  if (!Array.isArray(content)) return null;
+
+  const text = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const candidate = (part as { text?: unknown }).text;
+      return typeof candidate === 'string' ? candidate : '';
+    })
+    .join('')
+    .trim();
+
+  return text || null;
+}
+
 function getSessionSummary(sessionId: string, transcriptPath: string): string | null {
   const projectDir = path.dirname(transcriptPath);
   const indexPath = path.join(projectDir, 'sessions-index.json');
@@ -348,6 +375,45 @@ function waitForIpcMessage(): Promise<string | null> {
   });
 }
 
+function readEnvValue(
+  sdkEnv: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const value = sdkEnv[key]?.trim();
+  return value ? value : undefined;
+}
+
+function resolveModelSelection(
+  sdkEnv: Record<string, string | undefined>,
+): { model?: string; fallbackModel?: string; modelSource?: string; fallbackSource?: string } {
+  const primaryCandidates: Array<{ key: string; value?: string }> = [
+    { key: 'ANTHROPIC_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_MODEL') },
+    { key: 'ANTHROPIC_DEFAULT_SONNET_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_SONNET_MODEL') },
+    { key: 'ANTHROPIC_DEFAULT_OPUS_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_OPUS_MODEL') },
+    { key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_HAIKU_MODEL') },
+  ];
+
+  const fallbackCandidates: Array<{ key: string; value?: string }> = [
+    { key: 'ANTHROPIC_SMALL_FAST_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_SMALL_FAST_MODEL') },
+    { key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_HAIKU_MODEL') },
+  ];
+
+  const primary = primaryCandidates.find((candidate) => candidate.value);
+  const fallback = fallbackCandidates.find((candidate) => candidate.value);
+
+  let fallbackModel = fallback?.value;
+  if (primary?.value && fallbackModel === primary.value) {
+    fallbackModel = undefined;
+  }
+
+  return {
+    model: primary?.value,
+    fallbackModel,
+    modelSource: primary?.key,
+    fallbackSource: fallbackModel ? fallback?.key : undefined,
+  };
+}
+
 /**
  * Run a single query and stream results via writeOutput.
  * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
@@ -390,6 +456,11 @@ async function runQuery(
   let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
+  let lastAssistantText: string | null = null;
+  const modelSelection = resolveModelSelection(sdkEnv);
+  log(
+    `Model selection: primary=${modelSelection.model || 'sdk-default'}${modelSelection.modelSource ? ` (${modelSelection.modelSource})` : ''}, fallback=${modelSelection.fallbackModel || 'none'}${modelSelection.fallbackSource ? ` (${modelSelection.fallbackSource})` : ''}`,
+  );
 
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
@@ -429,7 +500,7 @@ async function runQuery(
         'Read', 'Write', 'Edit', 'Glob', 'Grep',
         'WebSearch', 'WebFetch',
         'Task', 'TaskOutput', 'TaskStop',
-        'TeamCreate', 'TeamDelete', 'SendMessage',
+        'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*'
@@ -453,6 +524,8 @@ async function runQuery(
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
+      model: modelSelection.model,
+      fallbackModel: modelSelection.fallbackModel,
     }
   })) {
     messageCount++;
@@ -461,6 +534,10 @@ async function runQuery(
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
+    }
+    if (message.type === 'assistant') {
+      const assistantText = extractAssistantText(message);
+      if (assistantText) lastAssistantText = assistantText;
     }
 
     if (message.type === 'system' && message.subtype === 'init') {
@@ -475,13 +552,16 @@ async function runQuery(
 
     if (message.type === 'result') {
       resultCount++;
-      const textResult = 'result' in message ? (message as { result?: string }).result : null;
+      const rawResult = 'result' in message ? (message as { result?: unknown }).result : null;
+      const textResult = typeof rawResult === 'string' ? rawResult : null;
+      const resolvedResult = (textResult && textResult.trim()) || lastAssistantText || null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
       writeOutput({
         status: 'success',
-        result: textResult || null,
+        result: resolvedResult,
         newSessionId
       });
+      lastAssistantText = null;
     }
   }
 

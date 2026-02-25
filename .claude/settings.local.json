@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npm run:*)",
+      "Bash(head:*)",
+      "Bash(container system:*)",
+      "Bash(./container/build.sh:*)",
+      "Bash(echo {}:*)",
+      "Bash(echo No auth files yet:*)",
+      "Bash(tail:*)",
+      "Bash(launchctl list:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(ls:*)",
+      "Bash(container exec:*)"
+    ]
+  }
+}

@@ -211,3 +211,29 @@ When scheduling tasks for other groups, use the `target_group_jid` parameter wit
 - `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group_jid: "120363336345536173@g.us")`
 
 The task will run in that group's context with access to their files and memory.
+
+## Agent Teams
+
+When creating a team to tackle a complex task, follow these rules:
+
+### CRITICAL: Follow the user's prompt exactly
+
+Create *exactly* the team the user asked for: same number of agents, same roles, same names.
+Do not add extra agents or rename roles.
+
+### Team member instructions
+
+Each team member MUST be instructed to:
+
+1. Share progress in the group via `mcp__nanoclaw__send_message` with a `sender` parameter matching their exact role name.
+2. Also communicate with teammates via `SendMessage` for coordination.
+3. Keep group messages short (2-4 sentences each).
+4. Use the same `sender` value consistently for stable bot identity.
+5. Never use markdown formatting. Use only WhatsApp/Telegram formatting:
+*single asterisks* for bold, _underscores_ for italic, • for bullets, and ```backticks``` for code.
+
+### Lead agent behavior
+
+- Do not relay every teammate message; users see those directly from teammate bots.
+- Send your own messages for coordination, synthesis, and final conclusions.
+- If an internal teammate update does not need user-facing output, wrap your entire output in `<internal>` tags.
