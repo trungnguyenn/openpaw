@@ -1,6 +1,7 @@
 import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
+import { handleCommand } from '../commands.js';
 import { logger } from '../logger.js';
 import {
   Channel,
@@ -20,6 +21,7 @@ export interface TelegramChannelOpts {
 
 // Bot pool for agent teams: send-only Api instances (no polling)
 const poolApis: Api[] = [];
+const poolUsernames: string[] = [];
 // Maps "{groupFolder}:{senderName}" -> pool Api index for stable assignment
 const senderBotMap = new Map<string, number>();
 let nextPoolIndex = 0;
@@ -53,6 +55,7 @@ export async function initBotPool(tokens: string[]): Promise<void> {
       const api = new Api(token);
       const me = await api.getMe();
       poolApis.push(api);
+      poolUsernames.push(me.username!.toLowerCase());
       logger.info(
         { username: me.username, id: me.id, poolSize: poolApis.length },
         'Pool bot initialized',
@@ -71,6 +74,10 @@ export async function initBotPool(tokens: string[]): Promise<void> {
  * Send a message via a pool bot assigned to the given sender name.
  * Assigns bots round-robin on first use; subsequent messages from the
  * same sender in the same group always use the same bot.
+ *
+ * Supports @mentioning a specific pool bot in the message:
+ * - If text contains @soddino_01_bot, that bot will send the response
+ * - The @mention is stripped from the message before sending
  */
 export async function sendPoolMessage(
   chatId: string,
@@ -84,24 +91,45 @@ export async function sendPoolMessage(
   }
 
   const normalizedSender = normalizeSenderName(sender);
-  const key = `${groupFolder}:${normalizedSender}`;
-  let idx = senderBotMap.get(key);
+
+  // Check for @mention of a specific pool bot
+  const mentionMatch = text.match(/@(\w+_bot)/i);
+  let idx: number | undefined;
+  let usedMention = false;
+
+  if (mentionMatch) {
+    const mentionedUsername = mentionMatch[1].toLowerCase();
+    const mentionedIdx = poolUsernames.indexOf(mentionedUsername);
+    if (mentionedIdx !== -1) {
+      idx = mentionedIdx;
+      usedMention = true;
+      // Strip the @mention from the message
+      text = text.replace(/@\w+_bot\s*/i, '').trim();
+      if (!text) return; // Don't send empty message
+    }
+  }
+
+  // If no valid mention, use the normal assignment logic
   if (idx === undefined) {
-    idx = nextPoolIndex % poolApis.length;
-    nextPoolIndex++;
-    senderBotMap.set(key, idx);
-    try {
-      await poolApis[idx].setMyName(normalizedSender);
-      await new Promise((r) => setTimeout(r, 2000));
-      logger.info(
-        { sender: normalizedSender, groupFolder, poolIndex: idx },
-        'Assigned and renamed pool bot',
-      );
-    } catch (err) {
-      logger.warn(
-        { sender: normalizedSender, err },
-        'Failed to rename pool bot (sending anyway)',
-      );
+    const key = `${groupFolder}:${normalizedSender}`;
+    idx = senderBotMap.get(key);
+    if (idx === undefined) {
+      idx = nextPoolIndex % poolApis.length;
+      nextPoolIndex++;
+      senderBotMap.set(key, idx);
+      try {
+        await poolApis[idx].setMyName(normalizedSender);
+        await new Promise((r) => setTimeout(r, 2000));
+        logger.info(
+          { sender: normalizedSender, groupFolder, poolIndex: idx },
+          'Assigned and renamed pool bot',
+        );
+      } catch (err) {
+        logger.warn(
+          { sender: normalizedSender, err },
+          'Failed to rename pool bot (sending anyway)',
+        );
+      }
     }
   }
 
@@ -117,7 +145,13 @@ export async function sendPoolMessage(
       }
     }
     logger.info(
-      { chatId, sender: normalizedSender, poolIndex: idx, length: text.length },
+      {
+        chatId,
+        sender: normalizedSender,
+        poolIndex: idx,
+        length: text.length,
+        usedMention,
+      },
       'Pool message sent',
     );
   } catch (err) {
@@ -189,11 +223,73 @@ export class TelegramChannel implements Channel {
       ctx.reply(`${ASSISTANT_NAME} is online.`);
     });
 
-    this.bot.on('message:text', async (ctx) => {
-      // Skip commands
-      if (ctx.message.text.startsWith('/')) return;
+    // Register slash commands with Telegram (shows in command list when typing /)
+    const commandsToRegister = [
+      { command: 'help', description: 'Show available commands' },
+      { command: 'status', description: 'Show current status' },
+      { command: 'whoami', description: 'Show your sender identity' },
+      { command: 'models', description: 'List available models' },
+      { command: 'model', description: 'Show/update model (/model fast 1)' },
+      {
+        command: 'think',
+        description: 'Control thinking level (/think, /think medium)',
+      },
+      {
+        command: 'verbose',
+        description: 'Toggle verbose mode (/verbose on, /verbose off)',
+      },
+      { command: 'subagents', description: 'List active sub-agents' },
+      { command: 'kill', description: 'Kill sub-agents (/kill #1, /kill all)' },
+      { command: 'restart', description: 'Restart NanoClaw service' },
+      { command: 'context', description: 'Show context info' },
+      { command: 'usage', description: 'Show token/cost usage' },
+      { command: 'reset', description: 'Reset current conversation session' },
+    ];
 
+    // Register commands with Telegram API
+    this.bot.api.setMyCommands(commandsToRegister).catch((err) => {
+      logger.warn({ err }, 'Failed to register Telegram commands');
+    });
+
+    this.bot.on('message:text', async (ctx) => {
       const chatJid = `tg:${ctx.chat.id}`;
+
+      // Handle slash commands (that aren't handled by native bot.command handlers)
+      if (ctx.message.text.startsWith('/')) {
+        const group = this.opts.registeredGroups()[chatJid];
+        if (group) {
+          const content = ctx.message.text;
+          const senderName =
+            ctx.from?.first_name ||
+            ctx.from?.username ||
+            ctx.from?.id.toString() ||
+            'Unknown';
+          const sender = ctx.from?.id.toString() || '';
+
+          const msg: NewMessage = {
+            id: ctx.message.message_id.toString(),
+            chat_jid: chatJid,
+            sender,
+            sender_name: senderName,
+            content,
+            timestamp: new Date(ctx.message.date * 1000).toISOString(),
+          };
+
+          const { response, handled } = await handleCommand(
+            content,
+            msg,
+            group,
+          );
+          if (handled && response) {
+            await ctx.reply(response, { parse_mode: 'Markdown' });
+          }
+          return; // Don't forward commands to the agent
+        }
+        // Unregistered chat - skip
+        return;
+      }
+
+      // Regular message processing continues below
       let content = ctx.message.text;
       const timestamp = new Date(ctx.message.date * 1000).toISOString();
       const senderName =
@@ -212,7 +308,7 @@ export class TelegramChannel implements Channel {
 
       // Translate Telegram @bot_username mentions into TRIGGER_PATTERN format.
       // Telegram @mentions (e.g., @andy_ai_bot) won't match TRIGGER_PATTERN
-      // (e.g., ^@Andy\b), so we prepend the trigger when the bot is @mentioned.
+      // (e.g., ^@Luzia365\b), so we prepend the trigger when the bot is @mentioned.
       const botUsername = ctx.me?.username?.toLowerCase();
       if (botUsername) {
         const entities = ctx.message.entities || [];
@@ -312,28 +408,26 @@ export class TelegramChannel implements Channel {
 
     // Start polling — returns a Promise that resolves when started
     return new Promise<void>((resolve) => {
-      this.bot!
-        .start({
-          onStart: (botInfo) => {
-            logger.info(
-              { username: botInfo.username, id: botInfo.id },
-              'Telegram bot connected',
-            );
-            console.log(`\n  Telegram bot: @${botInfo.username}`);
-            console.log(
-              `  Send /chatid to the bot to get a chat's registration ID\n`,
-            );
-            resolve();
-          },
-        })
-        .catch((err) => {
-          if (this.isPollingConflictError(err)) {
-            this.exitOnPollingConflict(err);
-            return;
-          }
-          logger.error({ err }, 'Telegram bot polling failed');
-          setTimeout(() => process.exit(1), 0);
-        });
+      this.bot!.start({
+        onStart: (botInfo) => {
+          logger.info(
+            { username: botInfo.username, id: botInfo.id },
+            'Telegram bot connected',
+          );
+          console.log(`\n  Telegram bot: @${botInfo.username}`);
+          console.log(
+            `  Send /chatid to the bot to get a chat's registration ID\n`,
+          );
+          resolve();
+        },
+      }).catch((err) => {
+        if (this.isPollingConflictError(err)) {
+          this.exitOnPollingConflict(err);
+          return;
+        }
+        logger.error({ err }, 'Telegram bot polling failed');
+        setTimeout(() => process.exit(1), 0);
+      });
     });
   }
 

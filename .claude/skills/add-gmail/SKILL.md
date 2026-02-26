@@ -253,11 +253,11 @@ Tell the user:
 
 > Gmail integration is set up! Test it by sending this message in your WhatsApp main channel:
 >
-> `@Andy check my recent emails`
+> `@Luzia365 check my recent emails`
 >
 > Or:
 >
-> `@Andy list my Gmail labels`
+> `@Luzia365 list my Gmail labels`
 
 Watch the logs for any errors:
 
@@ -277,8 +277,8 @@ Use `AskUserQuestion` to configure email triggering:
 
 AskUserQuestion: How should the agent be triggered from email?
 - **Specific Label** - Create a Gmail label (e.g., "NanoClaw"), emails with this label trigger the agent
-- **Email Address Pattern** - Emails to a specific address pattern (e.g., andy+task@gmail.com) via plus-addressing
-- **Subject Prefix** - Emails with a subject starting with a keyword (e.g., "[Andy]")
+- **Email Address Pattern** - Emails to a specific address pattern (e.g., luzia365_bot+task@gmail.com) via plus-addressing
+- **Subject Prefix** - Emails with a subject starting with a keyword (e.g., "[Luzia365]")
 
 AskUserQuestion: How should email conversations be grouped?
 - **Per Email Thread** - Each email thread gets its own conversation context
@@ -289,7 +289,7 @@ Store their choices for implementation.
 
 ### Step 1: Complete Tool Mode First
 
-Complete all Tool Mode steps above before continuing. Verify Gmail tools work by having the user test `@Andy check my recent emails`.
+Complete all Tool Mode steps above before continuing. Verify Gmail tools work by having the user test `@Luzia365 check my recent emails`.
 
 ### Step 2: Add Email Polling Configuration
 
@@ -315,7 +315,7 @@ export const EMAIL_CHANNEL: EmailChannelConfig = {
   triggerValue: 'NanoClaw',  // the label name, address pattern, or prefix
   contextMode: 'thread',
   pollIntervalMs: 60000,  // Check every minute
-  replyPrefix: '[Andy] '
+  replyPrefix: '[Luzia365] '
 };
 ```
 

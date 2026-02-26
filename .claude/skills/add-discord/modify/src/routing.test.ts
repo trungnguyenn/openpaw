@@ -61,7 +61,7 @@ describe('getAvailableGroups', () => {
       'dc:1234567890123456': {
         name: 'DC Registered',
         folder: 'dc-registered',
-        trigger: '@Andy',
+        trigger: '@Luzia365',
         added_at: '2024-01-01T00:00:00.000Z',
       },
     });
@@ -91,7 +91,7 @@ describe('getAvailableGroups', () => {
       'reg@g.us': {
         name: 'Registered',
         folder: 'registered',
-        trigger: '@Andy',
+        trigger: '@Luzia365',
         added_at: '2024-01-01T00:00:00.000Z',
       },
     });

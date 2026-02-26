@@ -78,7 +78,7 @@ If the user doesn't have a bot token, tell them:
 >
 > 1. Open Telegram and search for `@BotFather`
 > 2. Send `/newbot` and follow prompts:
->    - Bot name: Something friendly (e.g., "Andy Assistant")
+>    - Bot name: Something friendly (e.g., "Luzia365 Assistant")
 >    - Bot username: Must end with "bot" (e.g., "andy_ai_bot")
 > 3. Copy the bot token (looks like `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
 
@@ -174,7 +174,7 @@ Tell the user:
 
 > Send a message to your registered Telegram chat:
 > - For main chat: Any message works
-> - For non-main: `@Andy hello` or @mention the bot
+> - For non-main: `@Luzia365 hello` or @mention the bot
 >
 > The bot should respond within a few seconds.
 

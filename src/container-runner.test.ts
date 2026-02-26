@@ -88,7 +88,7 @@ import type { RegisteredGroup } from './types.js';
 const testGroup: RegisteredGroup = {
   name: 'Test Group',
   folder: 'test-group',
-  trigger: '@Andy',
+  trigger: '@Luzia365',
   added_at: new Date().toISOString(),
 };
 
@@ -115,11 +115,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('timeout after output resolves as success', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 
@@ -151,11 +151,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('timeout with no output resolves as error', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 
@@ -174,11 +174,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('normal exit after output resolves as success', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 

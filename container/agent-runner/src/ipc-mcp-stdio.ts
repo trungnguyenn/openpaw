@@ -253,7 +253,7 @@ Use available_groups.json to find the JID for a group. The folder name should be
     jid: z.string().describe('The WhatsApp JID (e.g., "120363336345536173@g.us")'),
     name: z.string().describe('Display name for the group'),
     folder: z.string().describe('Folder name for group files (lowercase, hyphens, e.g., "family-chat")'),
-    trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
+    trigger: z.string().describe('Trigger word (e.g., "@Luzia365")'),
   },
   async (args) => {
     if (!isMain) {
@@ -277,6 +277,162 @@ Use available_groups.json to find the JID for a group. The folder name should be
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
     };
+  },
+);
+
+// Process management for background coding agents
+interface ProcessInfo {
+  id: string;
+  pid: number;
+  command: string;
+  workdir: string;
+  startedAt: string;
+  status: 'running' | 'done' | 'killed';
+}
+
+// In-memory store for background processes (will be lost on container restart)
+// For persistent storage, we'd need to write to a file
+const processes = new Map<string, ProcessInfo>();
+
+// Directory for process output
+const PROCESS_DIR = '/tmp/nanoclaw-processes';
+fs.mkdirSync(PROCESS_DIR, { recursive: true });
+
+server.tool(
+  'process',
+  `Manage background coding agent processes.
+  Use this to track and interact with background agents started via bash background:true.
+  Actions:
+  - list: List all running/recent sessions
+  - poll: Check if session is still running
+  - log: Get session output (with optional offset/limit)
+  - write: Send raw data to stdin
+  - submit: Send data + newline (like typing and pressing Enter)
+  - kill: Terminate the session`,
+  {
+    action: z.enum(['list', 'poll', 'log', 'write', 'submit', 'kill', 'start']).describe('Action to perform'),
+    sessionId: z.string().optional().describe('Session ID from background bash'),
+    data: z.string().optional().describe('Data to send (for write/submit actions)'),
+    offset: z.number().optional().describe('Offset for log (default: 0)'),
+    limit: z.number().optional().describe('Limit for log (default: 1000)'),
+    command: z.string().optional().describe('Command to run (for start action)'),
+    workdir: z.string().optional().describe('Working directory (for start action)'),
+  },
+  async (args) => {
+    const { action, sessionId, data, offset = 0, limit = 1000 } = args;
+
+    // Action: list - show all processes
+    if (action === 'list') {
+      const list = Array.from(processes.values()).map(p => ({
+        id: p.id,
+        pid: p.pid,
+        command: p.command.slice(0, 50),
+        status: p.status,
+        startedAt: p.startedAt,
+      }));
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(list, null, 2) }],
+      };
+    }
+
+    // Action: start - start a new background process
+    if (action === 'start') {
+      if (!args.command) {
+        return { content: [{ type: 'text' as const, text: 'Error: command required' }], isError: true };
+      }
+
+      const processId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const outputFile = path.join(PROCESS_DIR, `${processId}.log`);
+
+      // Start the process in background
+      const { spawn } = await import('child_process');
+      const workdir = args.workdir || process.cwd();
+
+      // Parse the command - extract just the command part, not the full bash line
+      const cmd = args.command;
+
+      const child = spawn(cmd, [], {
+        shell: true,
+        cwd: workdir,
+        detached: true,
+        stdio: ['ignore', 'fs', 'fs'].map(() => fs.openSync(outputFile, 'a')) as any,
+      });
+
+      child.unref();
+
+      const info: ProcessInfo = {
+        id: processId,
+        pid: child.pid,
+        command: args.command,
+        workdir,
+        startedAt: new Date().toISOString(),
+        status: 'running',
+      };
+
+      processes.set(processId, info);
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ sessionId: processId, pid: child.pid }) }],
+      };
+    }
+
+    // All other actions require sessionId
+    if (!sessionId) {
+      return { content: [{ type: 'text' as const, text: 'Error: sessionId required' }], isError: true };
+    }
+
+    const processInfo = processes.get(sessionId);
+    if (!processInfo) {
+      return { content: [{ type: 'text' as const, text: `Error: session ${sessionId} not found` }], isError: true };
+    }
+
+    // Action: poll - check if still running
+    if (action === 'poll') {
+      try {
+        process.kill(processInfo.pid, 0); // Signal 0 checks if process exists
+        processInfo.status = 'running';
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ running: true, pid: processInfo.pid }) }] };
+      } catch {
+        processInfo.status = 'done';
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ running: false, pid: processInfo.pid }) }] };
+      }
+    }
+
+    // Action: log - get output
+    if (action === 'log') {
+      const outputFile = path.join(PROCESS_DIR, `${sessionId}.log`);
+      try {
+        let output = fs.readFileSync(outputFile, 'utf-8');
+        const lines = output.split('\n');
+        const sliced = lines.slice(offset, offset + limit);
+        return {
+          content: [{ type: 'text' as const, text: sliced.join('\n') }],
+        };
+      } catch {
+        return { content: [{ type: 'text' as const, text: '' }] };
+      }
+    }
+
+    // Action: kill - terminate the session
+    if (action === 'kill') {
+      try {
+        process.kill(processInfo.pid, 'SIGTERM');
+        processInfo.status = 'killed';
+      } catch {
+        // Process already dead
+        processInfo.status = 'done';
+      }
+      return { content: [{ type: 'text' as const, text: `Process ${sessionId} killed` }] };
+    }
+
+    // Action: write - send raw data to stdin (requires PTY - not fully supported in this simple implementation)
+    if (action === 'write' || action === 'submit') {
+      return {
+        content: [{ type: 'text' as const, text: 'Warning: stdin interaction requires PTY. Use bash with pty:true for interactive agents.' }],
+      };
+    }
+
+    return { content: [{ type: 'text' as const, text: 'Unknown action' }], isError: true };
   },
 );
 

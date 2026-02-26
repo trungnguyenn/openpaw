@@ -214,6 +214,7 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_DEFAULT_OPUS_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     'ANTHROPIC_SMALL_FAST_MODEL',
+    'ANTHROPIC_DISABLE_WEBSEARCH',
   ]);
 }
 

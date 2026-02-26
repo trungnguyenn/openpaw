@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import {
   _initTestDatabase,
+  clearSession,
   createTask,
   deleteTask,
   getAllChats,
   getMessagesSince,
   getNewMessages,
+  getSession,
   getTaskById,
+  setSession,
   storeChatMetadata,
   storeMessage,
   updateTask,
@@ -53,7 +56,7 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:01.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Luzia365');
     expect(messages).toHaveLength(1);
     expect(messages[0].id).toBe('msg-1');
     expect(messages[0].sender).toBe('123@s.whatsapp.net');
@@ -73,7 +76,7 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:04.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Luzia365');
     expect(messages).toHaveLength(0);
   });
 
@@ -91,7 +94,7 @@ describe('storeMessage', () => {
     });
 
     // Message is stored (we can retrieve it — is_from_me doesn't affect retrieval)
-    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Luzia365');
     expect(messages).toHaveLength(1);
   });
 
@@ -116,7 +119,7 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:01.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Luzia365');
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('updated');
   });
@@ -148,20 +151,20 @@ describe('getMessagesSince', () => {
   });
 
   it('returns messages after the given timestamp', () => {
-    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:02.000Z', 'Andy');
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:02.000Z', 'Luzia365');
     // Should exclude m1, m2 (before/at timestamp), m3 (bot message)
     expect(msgs).toHaveLength(1);
     expect(msgs[0].content).toBe('third');
   });
 
   it('excludes bot messages via is_bot_message flag', () => {
-    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Luzia365');
     const botMsgs = msgs.filter((m) => m.content === 'bot reply');
     expect(botMsgs).toHaveLength(0);
   });
 
   it('returns all non-bot messages when sinceTimestamp is empty', () => {
-    const msgs = getMessagesSince('group@g.us', '', 'Andy');
+    const msgs = getMessagesSince('group@g.us', '', 'Luzia365');
     // 3 user messages (bot message excluded)
     expect(msgs).toHaveLength(3);
   });
@@ -170,10 +173,10 @@ describe('getMessagesSince', () => {
     // Simulate a message written before migration: has prefix but is_bot_message = 0
     store({
       id: 'm5', chat_jid: 'group@g.us', sender: 'Bot@s.whatsapp.net',
-      sender_name: 'Bot', content: 'Andy: old bot reply',
+      sender_name: 'Bot', content: 'Luzia365: old bot reply',
       timestamp: '2024-01-01T00:00:05.000Z',
     });
-    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:04.000Z', 'Andy');
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:04.000Z', 'Luzia365');
     expect(msgs).toHaveLength(0);
   });
 });
@@ -208,7 +211,7 @@ describe('getNewMessages', () => {
     const { messages, newTimestamp } = getNewMessages(
       ['group1@g.us', 'group2@g.us'],
       '2024-01-01T00:00:00.000Z',
-      'Andy',
+      'Luzia365',
     );
     // Excludes bot message, returns 3 user messages
     expect(messages).toHaveLength(3);
@@ -219,7 +222,7 @@ describe('getNewMessages', () => {
     const { messages } = getNewMessages(
       ['group1@g.us', 'group2@g.us'],
       '2024-01-01T00:00:02.000Z',
-      'Andy',
+      'Luzia365',
     );
     // Only g1 msg2 (after ts, not bot)
     expect(messages).toHaveLength(1);
@@ -227,7 +230,7 @@ describe('getNewMessages', () => {
   });
 
   it('returns empty for no registered groups', () => {
-    const { messages, newTimestamp } = getNewMessages([], '', 'Andy');
+    const { messages, newTimestamp } = getNewMessages([], '', 'Luzia365');
     expect(messages).toHaveLength(0);
     expect(newTimestamp).toBe('');
   });
@@ -323,5 +326,19 @@ describe('task CRUD', () => {
 
     deleteTask('task-3');
     expect(getTaskById('task-3')).toBeUndefined();
+  });
+});
+
+// --- session persistence ---
+
+describe('session persistence', () => {
+  it('stores, reads, and clears session IDs by group folder', () => {
+    expect(getSession('main')).toBeUndefined();
+
+    setSession('main', 'session-123');
+    expect(getSession('main')).toBe('session-123');
+
+    clearSession('main');
+    expect(getSession('main')).toBeUndefined();
   });
 });

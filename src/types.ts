@@ -41,6 +41,13 @@ export interface RegisteredGroup {
   requiresTrigger?: boolean; // Default: true for groups, false for solo chats
 }
 
+export interface SessionState {
+  model?: string;
+  thinkLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high';
+  verbose?: boolean;
+  updatedAt: string;
+}
+
 export interface NewMessage {
   id: string;
   chat_jid: string;
