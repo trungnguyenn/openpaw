@@ -490,15 +490,6 @@ function supportsNativeWebSearch(
   return true;
 }
 
-  const baseUrl = readEnvValue(sdkEnv, 'ANTHROPIC_BASE_URL');
-  if (!baseUrl) return true;
-
-  const lower = baseUrl.toLowerCase();
-  // OpenRouter currently returns 404 for native web search endpoints.
-  if (lower.includes('openrouter.ai')) return false;
-  return true;
-}
-
 /**
  * Run a single query and stream results via writeOutput.
  * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,

@@ -92,7 +92,7 @@ export async function sendPoolMessage(
 
   const normalizedSender = normalizeSenderName(sender);
 
-  // Check for @mention of a specific pool bot
+  // Check for @mention of a specific pool bot in the message text
   const mentionMatch = text.match(/@(\w+_bot)/i);
   let idx: number | undefined;
   let usedMention = false;
@@ -109,7 +109,18 @@ export async function sendPoolMessage(
     }
   }
 
-  // If no valid mention, use the normal assignment logic
+  // If no mention in text, check if sender itself is a pool bot name
+  // (explicitly directed to a pool bot via leading @mention in original message)
+  if (idx === undefined && normalizedSender.toLowerCase().endsWith('_bot')) {
+    const senderLower = normalizedSender.toLowerCase();
+    const senderIdx = poolUsernames.indexOf(senderLower);
+    if (senderIdx !== -1) {
+      idx = senderIdx;
+      usedMention = true;
+    }
+  }
+
+  // If no pool bot determined yet, use the normal assignment logic (for human senders)
   if (idx === undefined) {
     const key = `${groupFolder}:${normalizedSender}`;
     idx = senderBotMap.get(key);
@@ -258,7 +269,9 @@ export class TelegramChannel implements Channel {
       if (ctx.message.text.startsWith('/')) {
         const group = this.opts.registeredGroups()[chatJid];
         if (group) {
-          const content = ctx.message.text;
+          // Strip @username from command (Telegram appends it in groups with multiple bots)
+          // e.g., "/reset@luzia365_bot" -> "/reset"
+          let content = ctx.message.text.replace(/@\w+$/, '');
           const senderName =
             ctx.from?.first_name ||
             ctx.from?.username ||

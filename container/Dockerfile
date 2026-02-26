@@ -41,6 +41,10 @@ COPY agent-runner/package*.json ./
 # Install dependencies
 RUN npm install
 
+# Install Python and Tavily for web search
+RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
+RUN pip3 install tavily-python --break-system-packages
+
 # Copy source code
 COPY agent-runner/ ./
 

@@ -15,6 +15,7 @@ import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   initBotPool,
   registerMainTelegramSender,
+  sendPoolMessage,
   TelegramChannel,
 } from './channels/telegram.js';
 import {
@@ -39,6 +40,7 @@ import {
   setRegisteredGroup,
   setRouterState,
   setSession,
+  clearSession,
   storeChatMetadata,
   storeMessage,
 } from './db.js';
@@ -47,6 +49,7 @@ import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { setResetConversationHandler } from './commands.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -63,6 +66,26 @@ let singletonLockFd: number | null = null;
 let whatsapp: WhatsAppChannel | undefined;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+
+// Register command handlers
+setResetConversationHandler(async (msg, group) => {
+  const chatJid = msg.chat_jid;
+  const wasActive = queue.isGroupActive(chatJid);
+  const hadSession = !!sessions[group.folder];
+
+  // Close the active container if any
+  queue.closeStdin(chatJid);
+
+  // Clear the session from database and local variable
+  clearSession(group.folder);
+  delete sessions[group.folder];
+
+  // Also clear lastAgentTimestamp for this chat
+  delete lastAgentTimestamp[chatJid];
+  saveState();
+
+  return { hadSession, closedActiveContainer: wasActive };
+});
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -163,6 +186,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // Note: Trigger requirement disabled because pool bots are read-only.
   // Only the main bot can send messages, so all messages should be processed.
 
+  // Check if message STARTS with @mention of a pool bot (e.g., "@soddino_01_bot hello")
+  // Only look at the first message's content for the leading @mention
+  const firstMessageContent = missedMessages[0]?.content || '';
+  const leadingMentionMatch = firstMessageContent.match(/^@(\w+_bot)\s+(.*)/i);
+  const poolBotMention = leadingMentionMatch
+    ? leadingMentionMatch[1].toLowerCase()
+    : null;
+
   const prompt = formatMessages(missedMessages);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -206,7 +237,21 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        await channel.sendMessage(chatJid, text);
+        // If user mentioned a pool bot, use that bot to respond
+        if (poolBotMention && chatJid.startsWith('tg:')) {
+          // Strip the @mention from the response
+          const responseText = text.replace(/@\w+_bot\s*/gi, '').trim();
+          if (responseText) {
+            await sendPoolMessage(
+              chatJid,
+              responseText,
+              poolBotMention,
+              group.folder,
+            );
+          }
+        } else {
+          await channel.sendMessage(chatJid, text);
+        }
         outputSentToUser = true;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)

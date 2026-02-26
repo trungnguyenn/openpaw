@@ -38,7 +38,9 @@
       "Bash(sqlite3 store/messages.db \"SELECT jid, name, folder, requires_trigger FROM registered_groups WHERE jid='tg:-5212129876';\")",
       "Bash(docker --version 2>/dev/null || echo \"Docker not found\")",
       "Bash(container list -a)",
-      "Bash(pgrep -f \"nanoclaw\" && ps aux | grep -E \"node.*nanoclaw|nanoclaw.*dist\" | grep -v grep)"
+      "Bash(pgrep -f \"nanoclaw\" && ps aux | grep -E \"node.*nanoclaw|nanoclaw.*dist\" | grep -v grep)",
+      "Bash(test:*)",
+      "Bash(git:*)"
     ]
   }
 }
