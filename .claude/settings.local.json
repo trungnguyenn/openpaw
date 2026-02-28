@@ -40,7 +40,8 @@
       "Bash(container list -a)",
       "Bash(pgrep -f \"nanoclaw\" && ps aux | grep -E \"node.*nanoclaw|nanoclaw.*dist\" | grep -v grep)",
       "Bash(test:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(launchctl load:*)"
     ]
   }
 }
