@@ -1,4 +1,3 @@
-import os from 'os';
 import path from 'path';
 
 import { readEnvFile } from './env.js';
@@ -9,18 +8,27 @@ import { readEnvFile } from './env.js';
 const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_BOT_POOL',
+  'TELEGRAM_ONLY',
+  'LOG_LEVEL',
 ]);
 
+if (envConfig.LOG_LEVEL) {
+  process.env.LOG_LEVEL = envConfig.LOG_LEVEL;
+}
+
 export const ASSISTANT_NAME =
-  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
+  process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Luzia365';
 export const ASSISTANT_HAS_OWN_NUMBER =
-  (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+  (process.env.ASSISTANT_HAS_OWN_NUMBER ||
+    envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
-const HOME_DIR = process.env.HOME || os.homedir();
+const HOME_DIR = process.env.HOME || '/Users/user';
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
 export const MOUNT_ALLOWLIST_PATH = path.join(
@@ -45,10 +53,7 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   10,
 ); // 10MB default
 export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(
-  process.env.IDLE_TIMEOUT || '1800000',
-  10,
-); // 30min default — how long to keep container alive after last result
+export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
   1,
   parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
@@ -67,3 +72,33 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Telegram configuration
+export const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN || envConfig.TELEGRAM_BOT_TOKEN || '';
+export const TELEGRAM_BOT_POOL = (
+  process.env.TELEGRAM_BOT_POOL ||
+  envConfig.TELEGRAM_BOT_POOL ||
+  ''
+)
+  .split(',')
+  .map((t) => t.trim())
+  .filter(Boolean);
+export const TELEGRAM_ONLY =
+  (process.env.TELEGRAM_ONLY || envConfig.TELEGRAM_ONLY) === 'true';
+
+// Available models for /models command (OpenRouter/Claude API compatible)
+export const ANTHROPIC_MODELS = (
+  process.env.ANTHROPIC_MODELS ||
+  'minimax/minimax-m2.5,x-ai/grok-4.1-fast,z-ai/glm-5'
+)
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+// Default model
+export const DEFAULT_MODEL =
+  process.env.DEFAULT_MODEL || 'claude-sonnet-4-20250514';
+
+// Commands configuration
+export const COMMANDS_ENABLED = process.env.COMMANDS_ENABLED !== 'false';

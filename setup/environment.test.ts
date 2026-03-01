@@ -44,12 +44,12 @@ describe('registered groups DB query', () => {
     db.prepare(
       `INSERT INTO registered_groups (jid, name, folder, trigger_pattern, added_at, requires_trigger)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run('123@g.us', 'Group 1', 'group-1', '@Andy', '2024-01-01T00:00:00.000Z', 1);
+    ).run('123@g.us', 'Group 1', 'group-1', '@Luzia365', '2024-01-01T00:00:00.000Z', 1);
 
     db.prepare(
       `INSERT INTO registered_groups (jid, name, folder, trigger_pattern, added_at, requires_trigger)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run('456@g.us', 'Group 2', 'group-2', '@Andy', '2024-01-01T00:00:00.000Z', 1);
+    ).run('456@g.us', 'Group 2', 'group-2', '@Luzia365', '2024-01-01T00:00:00.000Z', 1);
 
     const row = db.prepare(
       'SELECT COUNT(*) as count FROM registered_groups',
@@ -72,7 +72,7 @@ describe('credentials detection', () => {
   });
 
   it('returns false when no credentials', () => {
-    const content = 'ASSISTANT_NAME="Andy"\nOTHER=foo';
+    const content = 'ASSISTANT_NAME="Luzia365"\nOTHER=foo';
     const hasCredentials = /^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)=/m.test(content);
     expect(hasCredentials).toBe(false);
   });

@@ -106,6 +106,10 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
   fs.writeFileSync(plistPath, plist);
   logger.info({ plistPath }, 'Wrote launchd plist');
 
+  // Prevent duplicate responses by stopping any manually started instances
+  // before launchd takes over.
+  killOrphanedProcesses(projectRoot);
+
   try {
     execSync(`launchctl load ${JSON.stringify(plistPath)}`, { stdio: 'ignore' });
     logger.info('launchctl load succeeded');
@@ -150,9 +154,8 @@ function setupLinux(projectRoot: string, nodePath: string, homeDir: string): voi
  */
 function killOrphanedProcesses(projectRoot: string): void {
   try {
-    execSync(`pkill -f '${projectRoot}/dist/index\\.js' || true`, {
-      stdio: 'ignore',
-    });
+    execSync(`pkill -f '${projectRoot}/dist/index\\.js' || true`, { stdio: 'ignore' });
+    execSync(`pkill -f '${projectRoot}/src/index\\.ts' || true`, { stdio: 'ignore' });
     logger.info('Stopped any orphaned nanoclaw processes');
   } catch {
     // pkill not available or no orphans

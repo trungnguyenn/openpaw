@@ -71,14 +71,17 @@ let fakeProc: ReturnType<typeof createFakeProcess>;
 
 // Mock child_process.spawn
 vi.mock('child_process', async () => {
-  const actual = await vi.importActual<typeof import('child_process')>('child_process');
+  const actual =
+    await vi.importActual<typeof import('child_process')>('child_process');
   return {
     ...actual,
     spawn: vi.fn(() => fakeProc),
-    exec: vi.fn((_cmd: string, _opts: unknown, cb?: (err: Error | null) => void) => {
-      if (cb) cb(null);
-      return new EventEmitter();
-    }),
+    exec: vi.fn(
+      (_cmd: string, _opts: unknown, cb?: (err: Error | null) => void) => {
+        if (cb) cb(null);
+        return new EventEmitter();
+      },
+    ),
   };
 });
 
@@ -88,7 +91,7 @@ import type { RegisteredGroup } from './types.js';
 const testGroup: RegisteredGroup = {
   name: 'Test Group',
   folder: 'test-group',
-  trigger: '@Andy',
+  trigger: '@Luzia365',
   added_at: new Date().toISOString(),
 };
 
@@ -99,7 +102,10 @@ const testInput = {
   isMain: false,
 };
 
-function emitOutputMarker(proc: ReturnType<typeof createFakeProcess>, output: ContainerOutput) {
+function emitOutputMarker(
+  proc: ReturnType<typeof createFakeProcess>,
+  output: ContainerOutput,
+) {
   const json = JSON.stringify(output);
   proc.stdout.push(`${OUTPUT_START_MARKER}\n${json}\n${OUTPUT_END_MARKER}\n`);
 }
@@ -115,11 +121,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('timeout after output resolves as success', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 
@@ -151,11 +157,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('timeout with no output resolves as error', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 
@@ -174,11 +180,11 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('normal exit after output resolves as success', async () => {
-    const onOutput = vi.fn(async () => {});
+    const onOutput = vi.fn(async () => { });
     const resultPromise = runContainerAgent(
       testGroup,
       testInput,
-      () => {},
+      () => { },
       onOutput,
     );
 

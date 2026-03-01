@@ -16,7 +16,12 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  HookCallback,
+  PreCompactHookInput,
+  PreToolUseHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
 interface ContainerInput {
@@ -89,7 +94,9 @@ class MessageStream {
         yield this.queue.shift()!;
       }
       if (this.done) return;
-      await new Promise<void>(r => { this.waiting = r; });
+      await new Promise<void>((r) => {
+        this.waiting = r;
+      });
       this.waiting = null;
     }
   }
@@ -99,7 +106,9 @@ async function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = '';
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+    });
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
@@ -118,7 +127,37 @@ function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
 }
 
-function getSessionSummary(sessionId: string, transcriptPath: string): string | null {
+function extractAssistantText(message: unknown): string | null {
+  if (!message || typeof message !== 'object') return null;
+  const payload = message as {
+    content?: unknown;
+    message?: { content?: unknown };
+  };
+  const content = payload.message?.content ?? payload.content;
+
+  if (typeof content === 'string') {
+    const text = content.trim();
+    return text || null;
+  }
+
+  if (!Array.isArray(content)) return null;
+
+  const text = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const candidate = (part as { text?: unknown }).text;
+      return typeof candidate === 'string' ? candidate : '';
+    })
+    .join('')
+    .trim();
+
+  return text || null;
+}
+
+function getSessionSummary(
+  sessionId: string,
+  transcriptPath: string,
+): string | null {
   const projectDir = path.dirname(transcriptPath);
   const indexPath = path.join(projectDir, 'sessions-index.json');
 
@@ -128,13 +167,17 @@ function getSessionSummary(sessionId: string, transcriptPath: string): string | 
   }
 
   try {
-    const index: SessionsIndex = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-    const entry = index.entries.find(e => e.sessionId === sessionId);
+    const index: SessionsIndex = JSON.parse(
+      fs.readFileSync(indexPath, 'utf-8'),
+    );
+    const entry = index.entries.find((e) => e.sessionId === sessionId);
     if (entry?.summary) {
       return entry.summary;
     }
   } catch (err) {
-    log(`Failed to read sessions index: ${err instanceof Error ? err.message : String(err)}`);
+    log(
+      `Failed to read sessions index: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return null;
@@ -173,12 +216,18 @@ function createPreCompactHook(assistantName?: string): HookCallback {
       const filename = `${date}-${name}.md`;
       const filePath = path.join(conversationsDir, filename);
 
-      const markdown = formatTranscriptMarkdown(messages, summary, assistantName);
+      const markdown = formatTranscriptMarkdown(
+        messages,
+        summary,
+        assistantName,
+      );
       fs.writeFileSync(filePath, markdown);
 
       log(`Archived conversation to ${filePath}`);
     } catch (err) {
-      log(`Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`);
+      log(
+        `Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     return {};
@@ -235,9 +284,12 @@ function parseTranscript(content: string): ParsedMessage[] {
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'user' && entry.message?.content) {
-        const text = typeof entry.message.content === 'string'
-          ? entry.message.content
-          : entry.message.content.map((c: { text?: string }) => c.text || '').join('');
+        const text =
+          typeof entry.message.content === 'string'
+            ? entry.message.content
+            : entry.message.content
+                .map((c: { text?: string }) => c.text || '')
+                .join('');
         if (text) messages.push({ role: 'user', content: text });
       } else if (entry.type === 'assistant' && entry.message?.content) {
         const textParts = entry.message.content
@@ -246,22 +298,26 @@ function parseTranscript(content: string): ParsedMessage[] {
         const text = textParts.join('');
         if (text) messages.push({ role: 'assistant', content: text });
       }
-    } catch {
-    }
+    } catch {}
   }
 
   return messages;
 }
 
-function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null, assistantName?: string): string {
+function formatTranscriptMarkdown(
+  messages: ParsedMessage[],
+  title?: string | null,
+  assistantName?: string,
+): string {
   const now = new Date();
-  const formatDateTime = (d: Date) => d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
+  const formatDateTime = (d: Date) =>
+    d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
 
   const lines: string[] = [];
   lines.push(`# ${title || 'Conversation'}`);
@@ -272,10 +328,11 @@ function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | nu
   lines.push('');
 
   for (const msg of messages) {
-    const sender = msg.role === 'user' ? 'User' : (assistantName || 'Assistant');
-    const content = msg.content.length > 2000
-      ? msg.content.slice(0, 2000) + '...'
-      : msg.content;
+    const sender = msg.role === 'user' ? 'User' : assistantName || 'Assistant';
+    const content =
+      msg.content.length > 2000
+        ? msg.content.slice(0, 2000) + '...'
+        : msg.content;
     lines.push(`**${sender}**: ${content}`);
     lines.push('');
   }
@@ -288,7 +345,11 @@ function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | nu
  */
 function shouldClose(): boolean {
   if (fs.existsSync(IPC_INPUT_CLOSE_SENTINEL)) {
-    try { fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL);
+    } catch {
+      /* ignore */
+    }
     return true;
   }
   return false;
@@ -301,8 +362,9 @@ function shouldClose(): boolean {
 function drainIpcInput(): string[] {
   try {
     fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
-    const files = fs.readdirSync(IPC_INPUT_DIR)
-      .filter(f => f.endsWith('.json'))
+    const files = fs
+      .readdirSync(IPC_INPUT_DIR)
+      .filter((f) => f.endsWith('.json'))
       .sort();
 
     const messages: string[] = [];
@@ -315,8 +377,14 @@ function drainIpcInput(): string[] {
           messages.push(data.text);
         }
       } catch (err) {
-        log(`Failed to process input file ${file}: ${err instanceof Error ? err.message : String(err)}`);
-        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+        log(
+          `Failed to process input file ${file}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        try {
+          fs.unlinkSync(filePath);
+        } catch {
+          /* ignore */
+        }
       }
     }
     return messages;
@@ -348,6 +416,80 @@ function waitForIpcMessage(): Promise<string | null> {
   });
 }
 
+function readEnvValue(
+  sdkEnv: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const value = sdkEnv[key]?.trim();
+  return value ? value : undefined;
+}
+
+function resolveModelSelection(sdkEnv: Record<string, string | undefined>): {
+  model?: string;
+  fallbackModel?: string;
+  modelSource?: string;
+  fallbackSource?: string;
+} {
+  const primaryCandidates: Array<{ key: string; value?: string }> = [
+    { key: 'ANTHROPIC_MODEL', value: readEnvValue(sdkEnv, 'ANTHROPIC_MODEL') },
+    {
+      key: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_SONNET_MODEL'),
+    },
+    {
+      key: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_OPUS_MODEL'),
+    },
+    {
+      key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_HAIKU_MODEL'),
+    },
+  ];
+
+  const fallbackCandidates: Array<{ key: string; value?: string }> = [
+    {
+      key: 'ANTHROPIC_SMALL_FAST_MODEL',
+      value: readEnvValue(sdkEnv, 'ANTHROPIC_SMALL_FAST_MODEL'),
+    },
+    {
+      key: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      value: readEnvValue(sdkEnv, 'ANTHROPIC_DEFAULT_HAIKU_MODEL'),
+    },
+  ];
+
+  const primary = primaryCandidates.find((candidate) => candidate.value);
+  const fallback = fallbackCandidates.find((candidate) => candidate.value);
+
+  let fallbackModel = fallback?.value;
+  if (primary?.value && fallbackModel === primary.value) {
+    fallbackModel = undefined;
+  }
+
+  return {
+    model: primary?.value,
+    fallbackModel,
+    modelSource: primary?.key,
+    fallbackSource: fallbackModel ? fallback?.key : undefined,
+  };
+}
+
+function supportsNativeWebSearch(
+  sdkEnv: Record<string, string | undefined>,
+): boolean {
+  // Explicit disable flag takes priority
+  if (readEnvValue(sdkEnv, 'ANTHROPIC_DISABLE_WEBSEARCH') === '1') {
+    return false;
+  }
+
+  const baseUrl = readEnvValue(sdkEnv, 'ANTHROPIC_BASE_URL');
+  if (!baseUrl) return true;
+
+  const lower = baseUrl.toLowerCase();
+  // OpenRouter currently returns 404 for native web search endpoints.
+  if (lower.includes('openrouter.ai')) return false;
+  return true;
+}
+
 /**
  * Run a single query and stream results via writeOutput.
  * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
@@ -361,7 +503,11 @@ async function runQuery(
   containerInput: ContainerInput,
   sdkEnv: Record<string, string | undefined>,
   resumeAt?: string,
-): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
+): Promise<{
+  newSessionId?: string;
+  lastAssistantUuid?: string;
+  closedDuringQuery: boolean;
+}> {
   const stream = new MessageStream();
   stream.push(prompt);
 
@@ -390,6 +536,35 @@ async function runQuery(
   let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
+  let lastAssistantText: string | null = null;
+  const modelSelection = resolveModelSelection(sdkEnv);
+  const nativeWebSearchEnabled = supportsNativeWebSearch(sdkEnv);
+  log(
+    `Model selection: primary=${modelSelection.model || 'sdk-default'}${modelSelection.modelSource ? ` (${modelSelection.modelSource})` : ''}, fallback=${modelSelection.fallbackModel || 'none'}${modelSelection.fallbackSource ? ` (${modelSelection.fallbackSource})` : ''}`,
+  );
+  log(
+    `Native WebSearch: ${nativeWebSearchEnabled ? 'enabled' : 'disabled (provider unsupported)'}`,
+  );
+
+  const allowedTools = [
+    'Bash',
+    'Read',
+    'Write',
+    'Edit',
+    'Glob',
+    'Grep',
+    ...(nativeWebSearchEnabled ? ['WebSearch'] : []),
+    'WebFetch',
+    'Task',
+    'TaskOutput',
+    'TaskStop',
+    'SendMessage',
+    'TodoWrite',
+    'ToolSearch',
+    'Skill',
+    'NotebookEdit',
+    'mcp__nanoclaw__*',
+  ];
 
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
@@ -422,18 +597,13 @@ async function runQuery(
       resume: sessionId,
       resumeSessionAt: resumeAt,
       systemPrompt: globalClaudeMd
-        ? { type: 'preset' as const, preset: 'claude_code' as const, append: globalClaudeMd }
+        ? {
+            type: 'preset' as const,
+            preset: 'claude_code' as const,
+            append: globalClaudeMd,
+          }
         : undefined,
-      allowedTools: [
-        'Bash',
-        'Read', 'Write', 'Edit', 'Glob', 'Grep',
-        'WebSearch', 'WebFetch',
-        'Task', 'TaskOutput', 'TaskStop',
-        'TeamCreate', 'TeamDelete', 'SendMessage',
-        'TodoWrite', 'ToolSearch', 'Skill',
-        'NotebookEdit',
-        'mcp__nanoclaw__*'
-      ],
+      allowedTools,
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
@@ -450,17 +620,28 @@ async function runQuery(
         },
       },
       hooks: {
-        PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
+        PreCompact: [
+          { hooks: [createPreCompactHook(containerInput.assistantName)] },
+        ],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
-    }
+      model: modelSelection.model,
+      fallbackModel: modelSelection.fallbackModel,
+    },
   })) {
     messageCount++;
-    const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
+    const msgType =
+      message.type === 'system'
+        ? `system/${(message as { subtype?: string }).subtype}`
+        : message.type;
     log(`[msg #${messageCount}] type=${msgType}`);
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
+    }
+    if (message.type === 'assistant') {
+      const assistantText = extractAssistantText(message);
+      if (assistantText) lastAssistantText = assistantText;
     }
 
     if (message.type === 'system' && message.subtype === 'init') {
@@ -468,25 +649,43 @@ async function runQuery(
       log(`Session initialized: ${newSessionId}`);
     }
 
-    if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
-      const tn = message as { task_id: string; status: string; summary: string };
-      log(`Task notification: task=${tn.task_id} status=${tn.status} summary=${tn.summary}`);
+    if (
+      message.type === 'system' &&
+      (message as { subtype?: string }).subtype === 'task_notification'
+    ) {
+      const tn = message as {
+        task_id: string;
+        status: string;
+        summary: string;
+      };
+      log(
+        `Task notification: task=${tn.task_id} status=${tn.status} summary=${tn.summary}`,
+      );
     }
 
     if (message.type === 'result') {
       resultCount++;
-      const textResult = 'result' in message ? (message as { result?: string }).result : null;
-      log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      const rawResult =
+        'result' in message ? (message as { result?: unknown }).result : null;
+      const textResult = typeof rawResult === 'string' ? rawResult : null;
+      const resolvedResult =
+        (textResult && textResult.trim()) || lastAssistantText || null;
+      log(
+        `Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`,
+      );
       writeOutput({
         status: 'success',
-        result: textResult || null,
-        newSessionId
+        result: resolvedResult,
+        newSessionId,
       });
+      lastAssistantText = null;
     }
   }
 
   ipcPolling = false;
-  log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
+  log(
+    `Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`,
+  );
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
 }
 
@@ -497,13 +696,17 @@ async function main(): Promise<void> {
     const stdinData = await readStdin();
     containerInput = JSON.parse(stdinData);
     // Delete the temp file the entrypoint wrote — it contains secrets
-    try { fs.unlinkSync('/tmp/input.json'); } catch { /* may not exist */ }
+    try {
+      fs.unlinkSync('/tmp/input.json');
+    } catch {
+      /* may not exist */
+    }
     log(`Received input for group: ${containerInput.groupFolder}`);
   } catch (err) {
     writeOutput({
       status: 'error',
       result: null,
-      error: `Failed to parse input: ${err instanceof Error ? err.message : String(err)}`
+      error: `Failed to parse input: ${err instanceof Error ? err.message : String(err)}`,
     });
     process.exit(1);
   }
@@ -522,7 +725,11 @@ async function main(): Promise<void> {
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
 
   // Clean up stale _close sentinel from previous container runs
-  try { fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL); } catch { /* ignore */ }
+  try {
+    fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL);
+  } catch {
+    /* ignore */
+  }
 
   // Build initial prompt (drain any pending IPC messages too)
   let prompt = containerInput.prompt;
@@ -539,9 +746,18 @@ async function main(): Promise<void> {
   let resumeAt: string | undefined;
   try {
     while (true) {
-      log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
+      log(
+        `Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`,
+      );
 
-      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+      const queryResult = await runQuery(
+        prompt,
+        sessionId,
+        mcpServerPath,
+        containerInput,
+        sdkEnv,
+        resumeAt,
+      );
       if (queryResult.newSessionId) {
         sessionId = queryResult.newSessionId;
       }
@@ -579,7 +795,7 @@ async function main(): Promise<void> {
       status: 'error',
       result: null,
       newSessionId: sessionId,
-      error: errorMessage
+      error: errorMessage,
     });
     process.exit(1);
   }

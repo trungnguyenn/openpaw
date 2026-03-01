@@ -41,6 +41,13 @@ export interface RegisteredGroup {
   requiresTrigger?: boolean; // Default: true for groups, false for solo chats
 }
 
+export interface SessionState {
+  model?: string;
+  thinkLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high';
+  verbose?: boolean;
+  updatedAt: string;
+}
+
 export interface NewMessage {
   id: string;
   chat_jid: string;
@@ -87,10 +94,15 @@ export interface Channel {
   disconnect(): Promise<void>;
   // Optional: typing indicator. Channels that support it implement it.
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
+  // Optional: callback to store outgoing messages so they don't get re-processed
+  onOutgoingMessage?: (chatJid: string, message: NewMessage) => void;
 }
 
 // Callback type that channels use to deliver inbound messages
 export type OnInboundMessage = (chatJid: string, message: NewMessage) => void;
+
+// Callback for storing outgoing messages so they don't get re-processed
+export type OnOutgoingMessage = (chatJid: string, message: NewMessage) => void;
 
 // Callback for chat metadata discovery.
 // name is optional — channels that deliver names inline (Telegram) pass it here;

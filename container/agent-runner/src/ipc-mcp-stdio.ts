@@ -44,7 +44,12 @@ server.tool(
   "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Note: when running as a scheduled task, your final output is NOT sent to the user — use this tool if you need to communicate with the user or group.",
   {
     text: z.string().describe('The message text to send'),
-    sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
+    sender: z
+      .string()
+      .optional()
+      .describe(
+        'Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.',
+      ),
   },
   async (args) => {
     const data: Record<string, string | undefined> = {
@@ -86,11 +91,33 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
 \u2022 interval: Milliseconds between runs (e.g., "300000" for 5 minutes, "3600000" for 1 hour)
 \u2022 once: Local time WITHOUT "Z" suffix (e.g., "2026-02-01T15:30:00"). Do NOT use UTC/Z suffix.`,
   {
-    prompt: z.string().describe('What the agent should do when the task runs. For isolated mode, include all necessary context here.'),
-    schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
-    schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
-    context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
-    target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
+    prompt: z
+      .string()
+      .describe(
+        'What the agent should do when the task runs. For isolated mode, include all necessary context here.',
+      ),
+    schedule_type: z
+      .enum(['cron', 'interval', 'once'])
+      .describe(
+        'cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time',
+      ),
+    schedule_value: z
+      .string()
+      .describe(
+        'cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)',
+      ),
+    context_mode: z
+      .enum(['group', 'isolated'])
+      .default('group')
+      .describe(
+        'group=runs with chat history and memory, isolated=fresh session (include context in prompt)',
+      ),
+    target_group_jid: z
+      .string()
+      .optional()
+      .describe(
+        '(Main group only) JID of the group to schedule the task for. Defaults to the current group.',
+      ),
   },
   async (args) => {
     // Validate schedule_value before writing IPC
@@ -99,7 +126,12 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
         CronExpressionParser.parse(args.schedule_value);
       } catch {
         return {
-          content: [{ type: 'text' as const, text: `Invalid cron: "${args.schedule_value}". Use format like "0 9 * * *" (daily 9am) or "*/5 * * * *" (every 5 min).` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Invalid cron: "${args.schedule_value}". Use format like "0 9 * * *" (daily 9am) or "*/5 * * * *" (every 5 min).`,
+            },
+          ],
           isError: true,
         };
       }
@@ -107,28 +139,47 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       const ms = parseInt(args.schedule_value, 10);
       if (isNaN(ms) || ms <= 0) {
         return {
-          content: [{ type: 'text' as const, text: `Invalid interval: "${args.schedule_value}". Must be positive milliseconds (e.g., "300000" for 5 min).` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Invalid interval: "${args.schedule_value}". Must be positive milliseconds (e.g., "300000" for 5 min).`,
+            },
+          ],
           isError: true,
         };
       }
     } else if (args.schedule_type === 'once') {
-      if (/[Zz]$/.test(args.schedule_value) || /[+-]\d{2}:\d{2}$/.test(args.schedule_value)) {
+      if (
+        /[Zz]$/.test(args.schedule_value) ||
+        /[+-]\d{2}:\d{2}$/.test(args.schedule_value)
+      ) {
         return {
-          content: [{ type: 'text' as const, text: `Timestamp must be local time without timezone suffix. Got "${args.schedule_value}" — use format like "2026-02-01T15:30:00".` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Timestamp must be local time without timezone suffix. Got "${args.schedule_value}" — use format like "2026-02-01T15:30:00".`,
+            },
+          ],
           isError: true,
         };
       }
       const date = new Date(args.schedule_value);
       if (isNaN(date.getTime())) {
         return {
-          content: [{ type: 'text' as const, text: `Invalid timestamp: "${args.schedule_value}". Use local time format like "2026-02-01T15:30:00".` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: `Invalid timestamp: "${args.schedule_value}". Use local time format like "2026-02-01T15:30:00".`,
+            },
+          ],
           isError: true,
         };
       }
     }
 
     // Non-main groups can only schedule for themselves
-    const targetJid = isMain && args.target_group_jid ? args.target_group_jid : chatJid;
+    const targetJid =
+      isMain && args.target_group_jid ? args.target_group_jid : chatJid;
 
     const data = {
       type: 'schedule_task',
@@ -144,7 +195,12 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     const filename = writeIpcFile(TASKS_DIR, data);
 
     return {
-      content: [{ type: 'text' as const, text: `Task scheduled (${filename}): ${args.schedule_type} - ${args.schedule_value}` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Task scheduled (${filename}): ${args.schedule_type} - ${args.schedule_value}`,
+        },
+      ],
     };
   },
 );
@@ -158,30 +214,56 @@ server.tool(
 
     try {
       if (!fs.existsSync(tasksFile)) {
-        return { content: [{ type: 'text' as const, text: 'No scheduled tasks found.' }] };
+        return {
+          content: [
+            { type: 'text' as const, text: 'No scheduled tasks found.' },
+          ],
+        };
       }
 
       const allTasks = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
 
       const tasks = isMain
         ? allTasks
-        : allTasks.filter((t: { groupFolder: string }) => t.groupFolder === groupFolder);
+        : allTasks.filter(
+            (t: { groupFolder: string }) => t.groupFolder === groupFolder,
+          );
 
       if (tasks.length === 0) {
-        return { content: [{ type: 'text' as const, text: 'No scheduled tasks found.' }] };
+        return {
+          content: [
+            { type: 'text' as const, text: 'No scheduled tasks found.' },
+          ],
+        };
       }
 
       const formatted = tasks
         .map(
-          (t: { id: string; prompt: string; schedule_type: string; schedule_value: string; status: string; next_run: string }) =>
+          (t: {
+            id: string;
+            prompt: string;
+            schedule_type: string;
+            schedule_value: string;
+            status: string;
+            next_run: string;
+          }) =>
             `- [${t.id}] ${t.prompt.slice(0, 50)}... (${t.schedule_type}: ${t.schedule_value}) - ${t.status}, next: ${t.next_run || 'N/A'}`,
         )
         .join('\n');
 
-      return { content: [{ type: 'text' as const, text: `Scheduled tasks:\n${formatted}` }] };
+      return {
+        content: [
+          { type: 'text' as const, text: `Scheduled tasks:\n${formatted}` },
+        ],
+      };
     } catch (err) {
       return {
-        content: [{ type: 'text' as const, text: `Error reading tasks: ${err instanceof Error ? err.message : String(err)}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error reading tasks: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
       };
     }
   },
@@ -202,7 +284,14 @@ server.tool(
 
     writeIpcFile(TASKS_DIR, data);
 
-    return { content: [{ type: 'text' as const, text: `Task ${args.task_id} pause requested.` }] };
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Task ${args.task_id} pause requested.`,
+        },
+      ],
+    };
   },
 );
 
@@ -221,7 +310,14 @@ server.tool(
 
     writeIpcFile(TASKS_DIR, data);
 
-    return { content: [{ type: 'text' as const, text: `Task ${args.task_id} resume requested.` }] };
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Task ${args.task_id} resume requested.`,
+        },
+      ],
+    };
   },
 );
 
@@ -240,7 +336,14 @@ server.tool(
 
     writeIpcFile(TASKS_DIR, data);
 
-    return { content: [{ type: 'text' as const, text: `Task ${args.task_id} cancellation requested.` }] };
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Task ${args.task_id} cancellation requested.`,
+        },
+      ],
+    };
   },
 );
 
@@ -250,15 +353,26 @@ server.tool(
 
 Use available_groups.json to find the JID for a group. The folder name should be lowercase with hyphens (e.g., "family-chat").`,
   {
-    jid: z.string().describe('The WhatsApp JID (e.g., "120363336345536173@g.us")'),
+    jid: z
+      .string()
+      .describe('The WhatsApp JID (e.g., "120363336345536173@g.us")'),
     name: z.string().describe('Display name for the group'),
-    folder: z.string().describe('Folder name for group files (lowercase, hyphens, e.g., "family-chat")'),
-    trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
+    folder: z
+      .string()
+      .describe(
+        'Folder name for group files (lowercase, hyphens, e.g., "family-chat")',
+      ),
+    trigger: z.string().describe('Trigger word (e.g., "@Luzia365")'),
   },
   async (args) => {
     if (!isMain) {
       return {
-        content: [{ type: 'text' as const, text: 'Only the main group can register new groups.' }],
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Only the main group can register new groups.',
+          },
+        ],
         isError: true,
       };
     }
@@ -275,7 +389,231 @@ Use available_groups.json to find the JID for a group. The folder name should be
     writeIpcFile(TASKS_DIR, data);
 
     return {
-      content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Group "${args.name}" registered. It will start receiving messages immediately.`,
+        },
+      ],
+    };
+  },
+);
+
+// Process management for background coding agents
+interface ProcessInfo {
+  id: string;
+  pid: number;
+  command: string;
+  workdir: string;
+  startedAt: string;
+  status: 'running' | 'done' | 'killed';
+}
+
+// In-memory store for background processes (will be lost on container restart)
+// For persistent storage, we'd need to write to a file
+const processes = new Map<string, ProcessInfo>();
+
+// Directory for process output
+const PROCESS_DIR = '/tmp/nanoclaw-processes';
+fs.mkdirSync(PROCESS_DIR, { recursive: true });
+
+server.tool(
+  'process',
+  `Manage background coding agent processes.
+  Use this to track and interact with background agents started via bash background:true.
+  Actions:
+  - list: List all running/recent sessions
+  - poll: Check if session is still running
+  - log: Get session output (with optional offset/limit)
+  - write: Send raw data to stdin
+  - submit: Send data + newline (like typing and pressing Enter)
+  - kill: Terminate the session`,
+  {
+    action: z
+      .enum(['list', 'poll', 'log', 'write', 'submit', 'kill', 'start'])
+      .describe('Action to perform'),
+    sessionId: z
+      .string()
+      .optional()
+      .describe('Session ID from background bash'),
+    data: z
+      .string()
+      .optional()
+      .describe('Data to send (for write/submit actions)'),
+    offset: z.number().optional().describe('Offset for log (default: 0)'),
+    limit: z.number().optional().describe('Limit for log (default: 1000)'),
+    command: z
+      .string()
+      .optional()
+      .describe('Command to run (for start action)'),
+    workdir: z
+      .string()
+      .optional()
+      .describe('Working directory (for start action)'),
+  },
+  async (args) => {
+    const { action, sessionId, data, offset = 0, limit = 1000 } = args;
+
+    // Action: list - show all processes
+    if (action === 'list') {
+      const list = Array.from(processes.values()).map((p) => ({
+        id: p.id,
+        pid: p.pid,
+        command: p.command.slice(0, 50),
+        status: p.status,
+        startedAt: p.startedAt,
+      }));
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(list, null, 2) },
+        ],
+      };
+    }
+
+    // Action: start - start a new background process
+    if (action === 'start') {
+      if (!args.command) {
+        return {
+          content: [{ type: 'text' as const, text: 'Error: command required' }],
+          isError: true,
+        };
+      }
+
+      const processId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const outputFile = path.join(PROCESS_DIR, `${processId}.log`);
+
+      // Start the process in background
+      const { spawn } = await import('child_process');
+      const workdir = args.workdir || process.cwd();
+
+      // Parse the command - extract just the command part, not the full bash line
+      const cmd = args.command;
+
+      const child = spawn(cmd, [], {
+        shell: true,
+        cwd: workdir,
+        detached: true,
+        stdio: ['ignore', 'fs', 'fs'].map(() =>
+          fs.openSync(outputFile, 'a'),
+        ) as any,
+      });
+
+      child.unref();
+
+      const info: ProcessInfo = {
+        id: processId,
+        pid: child.pid!,
+        command: args.command,
+        workdir,
+        startedAt: new Date().toISOString(),
+        status: 'running',
+      };
+
+      processes.set(processId, info);
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({ sessionId: processId, pid: child.pid }),
+          },
+        ],
+      };
+    }
+
+    // All other actions require sessionId
+    if (!sessionId) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: sessionId required' }],
+        isError: true,
+      };
+    }
+
+    const processInfo = processes.get(sessionId);
+    if (!processInfo) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error: session ${sessionId} not found`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    // Action: poll - check if still running
+    if (action === 'poll') {
+      try {
+        process.kill(processInfo.pid, 0); // Signal 0 checks if process exists
+        processInfo.status = 'running';
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ running: true, pid: processInfo.pid }),
+            },
+          ],
+        };
+      } catch {
+        processInfo.status = 'done';
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ running: false, pid: processInfo.pid }),
+            },
+          ],
+        };
+      }
+    }
+
+    // Action: log - get output
+    if (action === 'log') {
+      const outputFile = path.join(PROCESS_DIR, `${sessionId}.log`);
+      try {
+        let output = fs.readFileSync(outputFile, 'utf-8');
+        const lines = output.split('\n');
+        const sliced = lines.slice(offset, offset + limit);
+        return {
+          content: [{ type: 'text' as const, text: sliced.join('\n') }],
+        };
+      } catch {
+        return { content: [{ type: 'text' as const, text: '' }] };
+      }
+    }
+
+    // Action: kill - terminate the session
+    if (action === 'kill') {
+      try {
+        process.kill(processInfo.pid, 'SIGTERM');
+        processInfo.status = 'killed';
+      } catch {
+        // Process already dead
+        processInfo.status = 'done';
+      }
+      return {
+        content: [
+          { type: 'text' as const, text: `Process ${sessionId} killed` },
+        ],
+      };
+    }
+
+    // Action: write - send raw data to stdin (requires PTY - not fully supported in this simple implementation)
+    if (action === 'write' || action === 'submit') {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Warning: stdin interaction requires PTY. Use bash with pty:true for interactive agents.',
+          },
+        ],
+      };
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: 'Unknown action' }],
+      isError: true,
     };
   },
 );
