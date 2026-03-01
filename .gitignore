@@ -29,6 +29,9 @@ groups/global/*
 .idea/
 .vscode/
 
+# Local Claude settings
+.claude/settings.local.json
+
 # Skills system (local per-installation state)
 .nanoclaw/
 
